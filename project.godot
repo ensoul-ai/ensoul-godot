@@ -1,0 +1,12 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; but it can also be edited via a text editor.
+
+[application]
+
+config/name="Ensoul SDK"
+config/features=PackedStringArray("4.0")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/ensoul/plugin.cfg")

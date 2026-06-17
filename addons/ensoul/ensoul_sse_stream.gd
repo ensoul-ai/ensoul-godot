@@ -24,6 +24,15 @@ var _block_data:     String = ""
 var _block_id:       String = ""
 var _retry_ms:       int    = 3000
 
+# HTTP response state. SSE runs over a raw HTTPClient poll loop (not HTTPRequest),
+# so a 4xx/5xx is delivered as an ordinary response body rather than raising — we
+# must inspect the status code ourselves or an error stream would silently finish
+# (or stall to timeout) instead of surfacing. `_response_code` is read once the
+# response arrives; `_is_error` flips the body handler from SSE-parse to
+# error-capture so the failure is emitted on `stream_error`.
+var _response_code:  int  = 0
+var _is_error:       bool = false
+
 
 func connect_to_url(
 	url: String,
@@ -65,7 +74,9 @@ func _process(_delta: float) -> void:
 		HTTPClient.STATUS_BODY:
 			_poll_body()
 		HTTPClient.STATUS_DISCONNECTED:
-			if automatic_reconnect and not _closed:
+			if _is_error:
+				_emit_error_and_close()
+			elif automatic_reconnect and not _closed:
 				set_process(false)
 				await get_tree().create_timer(_retry_ms / 1000.0).timeout
 				if not _closed:
@@ -102,11 +113,35 @@ func _start_request() -> void:
 
 
 func _poll_body() -> void:
+	# Latch the HTTP status the first time the response is available. A >=400
+	# code means the body is an error payload, not an SSE stream — switch to
+	# error-capture mode so we surface it instead of trying to parse events.
+	if _response_code == 0:
+		_response_code = _client.get_response_code()
+		if _response_code >= 400:
+			_is_error = true
 	var chunk := _client.read_response_body_chunk()
-	if chunk.size() == 0:
+	if chunk.size() > 0:
+		_buffer += chunk.get_string_from_utf8().replace("\r", "")
+		if not _is_error:
+			_parse_buffer()
 		return
-	_buffer += chunk.get_string_from_utf8().replace("\r", "")
-	_parse_buffer()
+	# Empty read. For an error response this means the (small) error body has
+	# been drained — emit it now rather than waiting for the socket to drop,
+	# which also covers keep-alive responses that never reach DISCONNECTED.
+	if _is_error:
+		_emit_error_and_close()
+
+
+func _emit_error_and_close() -> void:
+	if _closed:
+		return
+	var msg := "HTTP %d" % _response_code
+	var body_text := _buffer.strip_edges()
+	if body_text != "":
+		msg += ": " + body_text
+	stream_error.emit(msg)
+	close()
 
 
 func _parse_buffer() -> void:

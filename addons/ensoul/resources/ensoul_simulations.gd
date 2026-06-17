@@ -41,6 +41,11 @@ func pause(simulation_id: String) -> Dictionary:
 	return await _http.post("/simulations/%s/pause" % simulation_id)
 
 
+func delete(simulation_id: String) -> Dictionary:
+	## DELETE /v1/simulations/{simulation_id} — delete a simulation. Returns 204.
+	return await _http.delete("/simulations/%s" % simulation_id)
+
+
 func stream(simulation_id: String) -> EnsoulSseStream:
 	var config: EnsoulConfig = _http._config
 	var url := config.api_url() + ("/simulations/%s/stream" % simulation_id)

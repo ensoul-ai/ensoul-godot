@@ -94,7 +94,7 @@ func simulate(
 func trace_influence(
 	persona_id: String,
 	influence_type: String = "",
-	direction: String = "downstream",
+	direction: String = "downward",  # API accepts: downward | upward | both
 	max_depth: int = 3
 ) -> Dictionary:
 	var q := {"direction": direction, "max_depth": max_depth}

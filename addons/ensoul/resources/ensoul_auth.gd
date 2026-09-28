@@ -1,5 +1,7 @@
 class_name EnsoulAuth
 extends Node
+## Token exchange and the current identity. API keys are made in Studio; the SDK
+## only sends them.
 
 var _http: EnsoulHttp
 
@@ -16,17 +18,3 @@ func refresh(refresh_token: String) -> Dictionary:
 
 func me() -> Dictionary:
 	return await _http.get_req("/auth/me")
-
-
-func create_api_key(p_name: String, expires_days: int = 365, scopes: Array = []) -> Dictionary:
-	var body := {"name": p_name, "expires_days": expires_days}
-	if not scopes.is_empty(): body["scopes"] = scopes
-	return await _http.post("/api-keys", body)
-
-
-func list_api_keys() -> Dictionary:
-	return await _http.get_req("/api-keys")
-
-
-func revoke_api_key(key_id: String) -> Dictionary:
-	return await _http.delete("/api-keys/%s" % key_id)

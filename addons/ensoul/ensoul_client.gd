@@ -1,10 +1,11 @@
 class_name EnsoulClient
 extends Node
 
-const VERSION := "0.1.0"
+const VERSION := "0.3.0"
 
 var personas:    EnsoulPersonas
 var chat:        EnsoulChat
+var end_users:   EnsoulEndUsers
 var memory:      EnsoulMemory
 var domains:     EnsoulDomains
 var simulations: EnsoulSimulations
@@ -45,6 +46,7 @@ func _setup(config: EnsoulConfig) -> void:
 
 	personas    = EnsoulPersonas.new();    personas._http = _http; add_child(personas)
 	chat        = EnsoulChat.new();        chat._http = _http;     add_child(chat)
+	end_users   = EnsoulEndUsers.new();    end_users._http = _http; add_child(end_users)
 	memory      = EnsoulMemory.new();      memory._http = _http;   add_child(memory)
 	domains     = EnsoulDomains.new();     domains._http = _http;  add_child(domains)
 	simulations = EnsoulSimulations.new(); simulations._http = _http; add_child(simulations)

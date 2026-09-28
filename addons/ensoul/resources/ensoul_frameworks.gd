@@ -19,7 +19,7 @@ func create(body: Dictionary) -> Dictionary:
 
 
 func update(framework_id: String, body: Dictionary) -> Dictionary:
-	return await _http.put("/frameworks/%s" % framework_id, body)
+	return await _http.patch("/frameworks/%s" % framework_id, body)
 
 
 func delete(framework_id: String) -> Dictionary:
@@ -31,5 +31,7 @@ func validations(framework_id: String) -> Dictionary:
 	return await _http.get_req("/frameworks/%s/validations" % framework_id)
 
 
-func get_instruments(framework_id: String) -> Dictionary:
-	return await _http.get_req("/frameworks/%s/instruments" % framework_id)
+func get_instruments(framework_id: String) -> Array:
+	## GET /v1/frameworks/{framework_id} — returns the framework's "instruments" field.
+	var result := await _http.get_req("/frameworks/%s" % framework_id)
+	return result.get("body", {}).get("instruments", [])

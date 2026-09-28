@@ -16,6 +16,9 @@ var _payload:        String
 var _closed:         bool = true
 var _last_event_id:  String = ""
 var _buffer:         String = ""
+# Bytes of a UTF-8 code point that straddles two body chunks; decoded once
+# the next chunk completes it (see _take_complete_utf8).
+var _pending_bytes:  PackedByteArray = PackedByteArray()
 var _path:           String = "/"
 
 # SSE parse state
@@ -48,6 +51,7 @@ func connect_to_url(
 	_headers = headers.duplicate()
 	_headers.append("Accept: text/event-stream")
 	_headers.append("Cache-Control: no-cache")
+	_pending_bytes = PackedByteArray()
 	_closed  = false
 	return _start_connection()
 
@@ -98,7 +102,18 @@ func _start_connection() -> Error:
 	var slash_idx := rest.find("/")
 	var host := rest.substr(0, slash_idx) if slash_idx != -1 else rest
 	_path    = rest.substr(slash_idx) if slash_idx != -1 else "/"
-	var err := _client.connect_to_host(host, -1, TLSOptions.client() if use_tls else null)
+	# Split an explicit ":port" off the host. connect_to_host() expects a bare host;
+	# leaving the port in the string makes Godot DNS-resolve "host:port" verbatim ->
+	# STATUS_CANT_RESOLVE on any non-default port (e.g. a local dev proxy on :8000).
+	# Default 80/443 URLs carry no port suffix and are unaffected.
+	var port := -1
+	var colon_idx := host.rfind(":")
+	if colon_idx != -1:
+		var maybe_port := host.substr(colon_idx + 1)
+		if maybe_port.is_valid_int():
+			port = maybe_port.to_int()
+			host = host.substr(0, colon_idx)
+	var err := _client.connect_to_host(host, port, TLSOptions.client() if use_tls else null)
 	if err != OK:
 		return err
 	set_process(true)
@@ -122,7 +137,7 @@ func _poll_body() -> void:
 			_is_error = true
 	var chunk := _client.read_response_body_chunk()
 	if chunk.size() > 0:
-		_buffer += chunk.get_string_from_utf8().replace("\r", "")
+		_buffer += _take_complete_utf8(chunk).replace("\r", "")
 		if not _is_error:
 			_parse_buffer()
 		return
@@ -137,11 +152,49 @@ func _emit_error_and_close() -> void:
 	if _closed:
 		return
 	var msg := "HTTP %d" % _response_code
+	if _pending_bytes.size() > 0:
+		_buffer += _pending_bytes.get_string_from_utf8()
+		_pending_bytes = PackedByteArray()
 	var body_text := _buffer.strip_edges()
 	if body_text != "":
 		msg += ": " + body_text
 	stream_error.emit(msg)
 	close()
+
+
+## Decode as much of `chunk` as ends on a complete UTF-8 code point.
+##
+## HTTP body chunks split at arbitrary byte offsets, so a multi-byte character
+## (CJK, emoji, accented letters) can straddle two reads. Decoding each chunk
+## on its own turns that character into U+FFFD on both sides of the split. The
+## trailing bytes of an unfinished code point wait in `_pending_bytes` and are
+## prepended to the next chunk.
+func _take_complete_utf8(chunk: PackedByteArray) -> String:
+	var bytes := _pending_bytes
+	bytes.append_array(chunk)
+	var cut := bytes.size()
+	# Walk back over up to three continuation bytes (10xxxxxx) to the lead byte
+	# of the last code point, then check whether all of its bytes have arrived.
+	var i := bytes.size() - 1
+	var back := 0
+	while i >= 0 and back < 3 and (bytes[i] & 0xC0) == 0x80:
+		i -= 1
+		back += 1
+	if i >= 0:
+		var lead := bytes[i]
+		var need := 1
+		if (lead & 0xE0) == 0xC0:
+			need = 2
+		elif (lead & 0xF0) == 0xE0:
+			need = 3
+		elif (lead & 0xF8) == 0xF0:
+			need = 4
+		if bytes.size() - i < need:
+			cut = i
+	_pending_bytes = bytes.slice(cut)
+	if cut == 0:
+		return ""
+	return bytes.slice(0, cut).get_string_from_utf8()
 
 
 func _parse_buffer() -> void:

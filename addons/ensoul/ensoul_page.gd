@@ -13,6 +13,9 @@ var total:    int   = 0
 var page:     int   = 1
 var per_page: int   = 20
 var pages:    int   = 1
+## The error result ({"error", "status_code", "error_code", ...}) when the request was
+## refused; empty on success. A refused page has no items.
+var error:    Dictionary = {}
 
 # Private — for fetching next page
 var _http:  EnsoulHttp
@@ -26,6 +29,7 @@ static func from_result(result: Dictionary, http: EnsoulHttp, path: String, quer
 	p._path  = path
 	p._query = query.duplicate()
 	if result.has("error"):
+		p.error = result
 		return p
 	var body: Dictionary = result.get("body", {})
 	p.items    = body.get("items", [])

@@ -4,19 +4,45 @@ extends Node
 var _http: EnsoulHttp
 
 
+## POST /v1/simulations. The simulation's personas come from exactly one
+## source: a world (domain_id, everyone living there unless
+## participant_persona_ids narrows it), a network (network_id, everyone in it
+## when the simulation is created), or participant_persona_ids alone. Pass ""
+## for the source not used.
 func create(
 	p_name: String,
-	domain_id: String,
+	domain_id: String = "",
 	description: String = "",
 	config: Dictionary = {},
-	participant_persona_ids: Array = []
+	participant_persona_ids: Array = [],
+	network_id: String = ""
 ) -> Dictionary:
-	var body := {"name": p_name, "domain_id": domain_id}
+	# Refused here, before any request, in the same {"error": ...} shape a
+	# failed request returns. Not assert(): a release export strips asserts,
+	# and the API would then answer 400 for a mistake the caller can see.
+	var refusal := _create_refusal(domain_id, network_id, participant_persona_ids)
+	if refusal != "":
+		push_error(refusal)
+		return {"error": refusal}
+	var body := {"name": p_name}
+	if domain_id != "": body["domain_id"] = domain_id
+	if network_id != "": body["network_id"] = network_id
 	if description != "": body["description"] = description
 	if not config.is_empty(): body["config"] = config
 	if not participant_persona_ids.is_empty():
 		body["participant_persona_ids"] = participant_persona_ids
 	return await _http.post("/simulations", body)
+
+
+## Why create() cannot be sent as given, or "" when it can.
+static func _create_refusal(domain_id: String, network_id: String, participant_persona_ids: Array) -> String:
+	if domain_id != "" and network_id != "":
+		return "create() takes domain_id or network_id, not both"
+	if network_id != "" and not participant_persona_ids.is_empty():
+		return "create() from a network takes everyone in it; do not pass participant_persona_ids with network_id"
+	if domain_id == "" and network_id == "" and participant_persona_ids.is_empty():
+		return "create() needs a source: domain_id, network_id, or participant_persona_ids"
+	return ""
 
 
 func get_simulation(simulation_id: String) -> Dictionary:

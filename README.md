@@ -18,23 +18,31 @@ The `Ensoul` autoload singleton is registered automatically when the plugin is e
 
 ## Quick Start
 
+A persona needs no world. This one stands alone, and talks to one of your own
+end users:
+
 ```gdscript
 func _ready() -> void:
-    Ensoul.configure("ens_your_api_key")
+    Ensoul.configure("YOUR_API_KEY")
 
-    var result := await Ensoul.personas.create("Aria", "my_domain")
-    if result.has("error"):
-        push_warning(result.get("error", ""))
+    # A persona needs no world. This one stands alone.
+    var created := await Ensoul.personas.create("Ada")
+    if created.has("error"):
+        push_warning(created.get("error", ""))
         return
-    var persona_id: String = result["body"]["id"]
+    var persona_id: String = created["body"]["id"]
 
-    var reply := await Ensoul.chat.send(persona_id, "Hello, how are you?")
+    # user_id is your own id for the person talking.
+    # Each end user gets their own conversations with the persona.
+    var reply := await Ensoul.chat.send(persona_id, "Hi! Who are you?", "", "YOUR_END_USER_ID")
     print(reply["body"]["response"])
 
-    # Continue conversation
+    # End the conversation when the person is done.
     var conv_id: String = reply["body"]["conversation_id"]
-    var reply2 := await Ensoul.chat.send(persona_id, "Tell me more.", conv_id)
+    await Ensoul.chat.end_conversation(persona_id, conv_id, "YOUR_END_USER_ID")
 ```
+
+Pass a world name as the second argument to `create` to place a persona in a world instead.
 
 ## Streaming (SSE)
 
@@ -44,7 +52,7 @@ stream.event_received.connect(func(evt: EnsoulServerSentEvent) -> void:
     var chunk := JSON.parse_string(evt.data)
     if chunk == null: return
     if chunk.get("is_final", false):
-        print("Done — conv_id: ", chunk.get("conversation_id", ""))
+        print("Done, conv_id: ", chunk.get("conversation_id", ""))
     else:
         print(chunk.get("chunk", ""))
 )
@@ -82,6 +90,22 @@ var text: String = result["body"]["response"]
 
 **Success:** `{ "status_code": 200, "body": { ... } }`
 **Error:** `{ "error": "message", "status_code": 404 }`
+
+The `error` string is the API's error code where the body carries one
+(`turn_in_flight`, `conversation_ended`, `end_user_forgotten`,
+`user_id_required`, and `persona_calls` on a 402 with `resource` in the body),
+so a caller can branch on it directly:
+
+```gdscript
+if result.has("error"):
+    match result.get("error", ""):
+        "conversation_ended":
+            push_warning("That conversation has ended; start a new one")
+        "user_id_required":
+            push_warning("A persona-bound key must name user_id")
+        _:
+            push_warning("Ensoul error (HTTP %s): %s" % [result.get("status_code", "?"), result.get("error", "")])
+```
 
 ## Configuration
 
@@ -124,16 +148,17 @@ If no explicit values are passed, the SDK reads from environment variables:
 | Namespace | Description |
 |-----------|-------------|
 | `Ensoul.personas` | Persona CRUD, batch create, personality, filters, connections |
-| `Ensoul.chat` | Send messages, SSE streaming, conversation history |
+| `Ensoul.chat` | Send messages, SSE streaming, conversation history, explicit end |
+| `Ensoul.end_users` | Forget one of your end users: erase their conversations and memories |
 | `Ensoul.memory` | Memory CRUD, batch create, consolidation, knowledge queries |
-| `Ensoul.domains` | Domain configuration management |
+| `Ensoul.domains` | World configuration management |
 | `Ensoul.simulations` | Simulation lifecycle, streaming, events, history |
 | `Ensoul.aggregate` | Aggregate queries, streaming, grouped streams, simulation, influence |
 | `Ensoul.sessions` | Session management, hierarchy, aggregation |
 | `Ensoul.frameworks` | Framework CRUD, validation, instruments |
-| `Ensoul.auth` | OAuth2 token exchange, API key management |
+| `Ensoul.auth` | OAuth2 token exchange |
 | `Ensoul.health` | Health checks (no `/v1` prefix) |
-| `Ensoul.info` | Server config, rate limits, tiers, features |
+| `Ensoul.info` | Server config, rate limits, tiers, features, and your account info and key binding |
 
 ## License
 
